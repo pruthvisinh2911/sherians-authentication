@@ -77,14 +77,14 @@ export async function login(req, res) {
     try {
         const { email, password } = req.body;
 
-        // ✅ check if email & password provided
+        
         if (!email || !password) {
             return res.status(400).json({
                 message: "email and password are required"
             });
         }
 
-        // ✅ find user
+        
         const user = await userModel.findOne({ email });
 
         if (!user) {
@@ -93,13 +93,11 @@ export async function login(req, res) {
             });
         }
 
-        // ✅ hash incoming password
         const hashedPassword = crypto
             .createHash("sha256")
             .update(password)
             .digest("hex");
 
-        // ✅ compare passwords
         const isPasswordValid = hashedPassword === user.password;
 
         if (!isPasswordValid) {
@@ -108,20 +106,18 @@ export async function login(req, res) {
             });
         }
 
-        // ✅ create refresh token
         const refreshToken = jwt.sign(
             { id: user._id },
             configs.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
-        // ✅ hash refresh token before saving
         const refreshTokenHash = crypto
             .createHash("sha256")
             .update(refreshToken)
             .digest("hex");
 
-        // ✅ create session
+
         const session = await sessionModel.create({
             user: user._id,
             refreshTokenHash,
@@ -129,7 +125,7 @@ export async function login(req, res) {
             userAgent: req.headers["user-agent"]
         });
 
-        // ✅ create access token
+        
         const accessToken = jwt.sign(
             {
                 id: user._id,
@@ -141,15 +137,15 @@ export async function login(req, res) {
             }
         );
 
-        // ✅ send cookie
+        
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
-            secure: false, // ⚠️ set true only in production (HTTPS)
+            secure: false, 
             sameSite: "strict",
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
-        // ✅ response
+        
         return res.status(200).json({
             message: "logged in successfully",
             user: {
