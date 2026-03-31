@@ -72,6 +72,101 @@ res.status(201).json({
 })
 }
 
+
+export async function login(req, res) {
+    try {
+        const { email, password } = req.body;
+
+        // ✅ check if email & password provided
+        if (!email || !password) {
+            return res.status(400).json({
+                message: "email and password are required"
+            });
+        }
+
+        // ✅ find user
+        const user = await userModel.findOne({ email });
+
+        if (!user) {
+            return res.status(401).json({
+                message: "invalid email or password"
+            });
+        }
+
+        // ✅ hash incoming password
+        const hashedPassword = crypto
+            .createHash("sha256")
+            .update(password)
+            .digest("hex");
+
+        // ✅ compare passwords
+        const isPasswordValid = hashedPassword === user.password;
+
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                message: "invalid email or password"
+            });
+        }
+
+        // ✅ create refresh token
+        const refreshToken = jwt.sign(
+            { id: user._id },
+            configs.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
+
+        // ✅ hash refresh token before saving
+        const refreshTokenHash = crypto
+            .createHash("sha256")
+            .update(refreshToken)
+            .digest("hex");
+
+        // ✅ create session
+        const session = await sessionModel.create({
+            user: user._id,
+            refreshTokenHash,
+            ip: req.ip,
+            userAgent: req.headers["user-agent"]
+        });
+
+        // ✅ create access token
+        const accessToken = jwt.sign(
+            {
+                id: user._id,
+                sessionId: session._id,
+            },
+            configs.JWT_SECRET,
+            {
+                expiresIn: "15m"
+            }
+        );
+
+        // ✅ send cookie
+        res.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: false, // ⚠️ set true only in production (HTTPS)
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+
+        // ✅ response
+        return res.status(200).json({
+            message: "logged in successfully",
+            user: {
+                username: user.username,
+                email: user.email,
+            },
+            accessToken,
+        });
+
+    } catch (error) {
+        console.error("Login Error:", error);
+        return res.status(500).json({
+            message: "internal server error"
+        });
+    }
+}
+
 export async function getMe(req,res){
     const token = req.headers.authorization?.split(" ")[1]
 
@@ -162,9 +257,22 @@ export async function logout(req,res) {
 }
 
 export async function logoutAll(req,res) {
-    const refreshToken = req.cookies.refreshToken;
+const refreshToken = req.cookie.refreshToken
 
-     await sessionModel.updateMany({
-        user:decoded._id
-     })
+if(!refreshToken)
+    return res.status(400).json({
+    message:"Refresh token not found"
+})
+const decoded = jwt.verify(refreshToken,configs.JWT_SECRET)
+
+await sessionModel.updateMany({
+    user:decoded.id,
+    revoked:false
+},{
+    revoked:true
+})
+res.clearCookie("refreshToken")
+res.status(200).json({
+    message:"logged out from all the devices successfully"
+})
 }
